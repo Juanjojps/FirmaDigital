@@ -1,0 +1,441 @@
+ FASE 0 – Preparar el proyecto
+
+ Objetivo
+
+Tener la carpeta y entorno listos.
+
+ Pasos
+
+1. Crear una carpeta:
+
+   
+   FirmaPDF_Nombre1_Nombre2
+   
+
+2. Abrir esa carpeta con Visual Studio Code.
+
+3. Crear un entorno virtual:
+
+   
+    -m venv .venv
+   
+
+   Activar:
+
+    PowerShell:
+
+     
+     .venv\Scripts\Activate.ps1
+     
+
+4. Instalar las librerías necesarias:
+
+   
+   pip install PySide6 pypdf
+   
+
+5. Crear estos archivos (vacíos de momento):
+
+   
+   main.py
+   ui_mainwindow.py   (se generará más tarde)
+   
+
+6. Crear una carpeta para el `.ui`:
+
+   
+   ui/
+   
+
+
+
+ FASE 1 – Diseñar la interfaz en Qt Designer
+
+ Objetivo
+
+Crear la ventana principal de la aplicación de firma.
+
+ 1. Crear el formulario
+
+1. Abrir Qt Designer.
+2. Seleccionar plantilla: Main Window.
+3. Guardar como:
+
+   
+   ui/mainwindow.ui
+   
+
+
+
+ 2. Elementos de la ventana
+
+Queremos:
+
+ Menú “Archivo” y “Ayuda”.
+ Zona para elegir el PDF.
+ Zona de previsualización (aunque sea simulada).
+ Zona de datos de firma.
+ Botón para firmar.
+ Barra de estado (“Listo”, mensajes…).
+
+ a) Menú
+
+En Qt Designer, en el `QMainWindow`:
+
+1. En la barra de menús, crear:
+
+    Menú `Archivo` con acciones:
+
+      `Abrir PDF` → `objectName`: `actionAbrirPdf`
+      `Guardar PDF firmado` → `objectName`: `actionGuardarFirmado`
+      Separador
+      `Salir` → `objectName`: `actionSalir`
+
+    Menú `Ayuda` con:
+
+      `Acerca de...` → `objectName`: `actionAcercaDe`
+
+2. Opcionalmente, crear una QToolBar con acciones:
+
+    `Abrir PDF`
+    `Guardar firmado`
+
+> Importante: pon bien los `objectName` porque los usaremos en el código.
+
+
+
+ b) CentralWidget: layout principal
+
+1. Selecciona el `centralWidget`.
+2. Ponle un QVBoxLayout (disposición vertical).
+
+Dentro de este layout, vamos a añadir 3 bloques:
+
+1. Bloque 1: selección de PDF
+2. Bloque 2: previsualización
+3. Bloque 3: datos de firma + botón
+
+
+
+ Bloque 1 – Selección de PDF
+
+1. Arrastrar un `QWidget` al `centralWidget`.
+2. Asignarle un QHBoxLayout.
+3. Dentro meter:
+
+    `QLabel` → o: `"Archivo PDF:"`
+    `QLineEdit` → `objectName`: `leRutaPdf`
+
+      Propiedad `readOnly = true` (para que no se edite a mano).
+    `QPushButton` → o: `"Examinar..."`, `objectName`: `btnExaminar`
+
+Quedaría algo tipo:
+
+`[Archivo PDF:] [          ruta del archivo         ] [Examinar...]`
+
+
+
+ Bloque 2 – Previsualización (simple)
+
+No vamos a renderizar el PDF de verdad (eso ya son palabras mayores).
+Solo queremos simular una previsualización.
+
+1. Arrastrar un `QGraphicsView` al layout vertical.
+2. `objectName`: `gvPreview`.
+3. Este widget lo usaremos para mostrar un pequeño o tipo:
+
+   > “PDF cargado: nombre_archivo.pdf”
+
+
+
+ Bloque 3 – Datos de firma
+
+1. Arrastrar un `QGroupBox` → `title`: `"Datos de firma"`.
+
+2. `objectName`: `groupFirma`.
+
+3. Dentro del `QGroupBox`:
+
+    Pon un QFormLayout o QVBoxLayout.
+
+4. Añadir:
+
+    `QLabel` + `QLineEdit` → `objectName` del lineEdit: `leFirmante`
+     etiqueta: `"Nombre del firmante:"`
+    `QLabel` + `QLineEdit` → `objectName`: `leMotivo`
+     etiqueta: `"Motivo de la firma:"`
+
+5. Debajo, un `QPushButton`:
+
+    o: `"Aplicar firma al PDF"`
+    `objectName`: `btnFirmar`
+
+
+
+ Barra de estado
+
+El `QMainWindow` ya tiene `QStatusBar`.
+No hace falta tocar nada, pero asegúrate de que está (en el diseñador aparece abajo).
+
+
+
+ Guardar
+
+ Guardar el formulario: `ui/mainwindow.ui`.
+
+
+
+ FASE 2 – Generar `ui_mainwindow.py` con pyside6-uic
+
+En una terminal situada en la carpeta del proyecto:
+
+
+pyside6-uic ui/mainwindow.ui -o ui_mainwindow.py
+
+
+Esto genera una clase `Ui_MainWindow` que usaremos desde .
+
+
+
+ FASE 3 – Lógica en  (`main.py`)
+
+ Objetivo
+
+ Abrir un PDF.
+ Mostrar que está cargado.
+ Introducir datos de firma.
+ Guardar una copia “firmada” añadiendo metadatos al PDF.
+
+> No es una firma criptográfica real, pero sí un tratamiento real de PDFs y metadatos.
+
+
+
+ Estructura básica
+
+Copia este código en `main.py` y léelo con calma:
+
+
+import sys
+from datetime import datetime
+
+from PySide6.QtWidgets import (
+    QApplication,
+    QMainWindow,
+    QFileDialog,
+    QMessageBox,
+    QGraphicsScene,
+    QGraphicsItem,
+)
+from PySide6.QtGui import QFont
+
+from ui_mainwindow import Ui_MainWindow
+
+ Usaremos pypdf para leer/escribir PDFs
+from pypdf import PdfReader, PdfWriter
+
+
+class MainWindow(QMainWindow, Ui_MainWindow):
+    def __init__(self):
+        super().__init__()
+         Cargamos lo diseñado en Qt Designer
+        self.setupUi(self)
+
+         Ruta actual del PDF cargado
+        self.ruta_pdf = None
+
+         Configuramos la interfaz
+        self._configurar_interfaz()
+         Conectamos señales
+        self._conectar_senales()
+
+     ================== CONFIGURACIÓN INICIAL ==================
+
+    def _configurar_interfaz(self):
+        """Configura cosas iniciales de la ventana."""
+        self.setWindowTitle("Firma Digital de Documentos - DocuSecure")
+
+         o inicial en la barra de estado
+        self.statusBar().showMessage("Listo: cargue un PDF para comenzar.")
+
+         Previsualización vacía
+        self._actualizar_preview("Ningún PDF cargado.")
+
+    def _conectar_senales(self):
+        """Conecta botones y acciones de menú con funciones."""
+         Botón "Examinar..."
+        self.btnExaminar.clicked.connect(self.on_examinar_pdf)
+
+         Botón "Aplicar firma al PDF"
+        self.btnFirmar.clicked.connect(self.on_firmar_pdf)
+
+         Menú Archivo
+        self.actionAbrirPdf.triggered.connect(self.on_examinar_pdf)
+        self.actionGuardarFirmado.triggered.connect(self.on_guardar_firmado)
+        self.actionSalir.triggered.connect(self.close)
+
+         Menú Ayuda
+        self.actionAcercaDe.triggered.connect(self.on_acerca_de)
+
+     ================== PREVISUALIZACIÓN ==================
+
+    def _actualizar_preview(self, o):
+        """
+        Muestra un o en el QGraphicsView simulando una previsualización.
+        """
+        escena = QGraphicsScene(self)
+        item_o = QGraphicsItem(o)
+        fuente = QFont()
+        fuente.setPointSize(12)
+        item_o.setFont(fuente)
+        escena.addItem(item_o)
+        self.gvPreview.setScene(escena)
+
+     ================== ACCIONES PRINCIPALES ==================
+
+    def on_examinar_pdf(self):
+        """Permite al usuario elegir un PDF desde el disco."""
+        ruta, _ = QFileDialog.getOpenFileName(
+            self,
+            "Seleccionar PDF",
+            "",
+            "Archivos PDF (.pdf);;Todos los archivos (.)",
+        )
+
+        if not ruta:
+            return   Usuario canceló
+
+        self.ruta_pdf = ruta
+        self.leRutaPdf.set(ruta)
+
+         Previsualización simple
+        nombre_archivo = ruta.split("/")[-1].split("\\")[-1]
+        self._actualizar_preview(f"PDF cargado:\n{nombre_archivo}")
+
+        self.statusBar().showMessage(f"PDF cargado: {nombre_archivo}", 3000)
+
+    def on_firmar_pdf(self):
+        """
+        Aplica la 'firma' al PDF:
+        - Comprueba que hay PDF cargado.
+        - Pide datos de firmante y motivo.
+        - Pide ruta de salida.
+        - Crea un PDF nuevo con metadatos de firma.
+        """
+        if not self.ruta_pdf:
+            QMessageBox.warning(self, "Aviso", "Primero debes cargar un PDF.")
+            return
+
+        firmante = self.leFirmante.().strip()
+        motivo = self.leMotivo.().strip()
+
+        if not firmante:
+            QMessageBox.warning(self, "Aviso", "Introduce el nombre del firmante.")
+            return
+
+        if not motivo:
+            QMessageBox.warning(self, "Aviso", "Introduce el motivo de la firma.")
+            return
+
+         Pedimos dónde guardar el PDF firmado
+        ruta_salida, _ = QFileDialog.getSaveFileName(
+            self,
+            "Guardar PDF firmado",
+            "documento_firmado.pdf",
+            "Archivos PDF (.pdf);;Todos los archivos (.)",
+        )
+
+        if not ruta_salida:
+            return
+
+        try:
+            self._firmar_pdf(self.ruta_pdf, ruta_salida, firmante, motivo)
+        except Exception as e:
+            QMessageBox.critical(
+                self,
+                "Error al firmar",
+                f"Ocurrió un error al firmar el PDF:\n{e}",
+            )
+            return
+
+        self.statusBar().showMessage(f"PDF firmado guardado en: {ruta_salida}", 5000)
+        QMessageBox.information(
+            self,
+            "Firma completada",
+            "El PDF se ha firmado correctamente.\n"
+            f"Ruta de salida:\n{ruta_salida}",
+        )
+
+    def _firmar_pdf(self, ruta_entrada, ruta_salida, firmante, motivo):
+        """
+        Lógica de firma:
+        - Copia el PDF de entrada a salida.
+        - Añade metadatos de firma (no es una firma digital criptográfica).
+        """
+        reader = PdfReader(ruta_entrada)
+        writer = PdfWriter()
+
+         Copiamos todas las páginas tal cual
+        for page in reader.pages:
+            writer.add_page(page)
+
+         Fecha/hora de la "firma"
+        fecha_firma = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+         Metadatos existentes
+        metadata = reader.metadata or {}
+
+         Añadimos nuestros metadatos de firma
+        metadata.update(
+            {
+                "/SignedBy": firmante,
+                "/SignatureReason": motivo,
+                "/SignedAt": fecha_firma,
+            }
+        )
+
+        writer.add_metadata(metadata)
+
+         Guardamos el nuevo PDF
+        with open(ruta_salida, "wb") as f:
+            writer.write(f)
+
+    def on_guardar_firmado(self):
+        """
+        Esta acción del menú puede:
+        - Reutilizar la misma lógica que firmar
+        - O solo avisar que usen el botón 'Aplicar firma'
+        """
+        QMessageBox.information(
+            self,
+            "Información",
+            "Para guardar un PDF firmado, usa el botón 'Aplicar firma al PDF'.",
+        )
+
+    def on_acerca_de(self):
+        """Muestra información sobre la aplicación."""
+        QMessageBox.information(
+            self,
+            "Acerca de DocuSecure",
+            "Aplicación de Firma Digital de Documentos\n"
+            "Asignatura: Desarrollo de Interfaces (2º DAM)\n"
+            "Tecnologías: PySide6 + pypdf",
+        )
+
+
+if __name__ == "__main__":
+    app = QApplication(sys.argv)
+    window = MainWindow()
+    window.show()
+    sys.exit(app.exec())
+
+
+
+
+  Resumen de lo aprendido
+  
+ PySide6 + Qt Designer (layouts, menús, barra de estado, QGraphicsView, diálogos).
+ Uso de librerías externas reales: `pypdf`.
+ Concepto de “firma” lógica: metadatos en PDF.
+ Flujo típico de app de escritorio:
+
+   Abrir archivo → tratar → guardar → avisar al usuario.
